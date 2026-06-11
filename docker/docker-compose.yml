@@ -1,0 +1,46 @@
+services:
+  localstack:
+    image: localstack/localstack:3.5
+    environment:
+      SERVICES: sqs,s3,dynamodb,lambda
+      AWS_DEFAULT_REGION: us-east-1
+    ports:
+      - "4566:4566"
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:4566/_localstack/health"]
+      interval: 5s
+      timeout: 5s
+      retries: 20
+
+  setup:
+    build:
+      context: ..
+      dockerfile: docker/Dockerfile
+    command: python infra/setup_localstack.py
+    environment:
+      AWS_ENDPOINT_URL: http://localstack:4566
+      AWS_REGION: us-east-1
+      SQS_QUEUE_URL: http://localstack:4566/000000000000/log-ingestion-queue
+      S3_BUCKET: log-archive
+      DYNAMODB_TABLE: log-index
+      DLQ_URL: http://localstack:4566/000000000000/log-dlq
+    depends_on:
+      localstack:
+        condition: service_healthy
+
+  api:
+    build:
+      context: ..
+      dockerfile: docker/Dockerfile
+    environment:
+      AWS_ENDPOINT_URL: http://localstack:4566
+      AWS_REGION: us-east-1
+      SQS_QUEUE_URL: http://localstack:4566/000000000000/log-ingestion-queue
+      S3_BUCKET: log-archive
+      DYNAMODB_TABLE: log-index
+      DLQ_URL: http://localstack:4566/000000000000/log-dlq
+    ports:
+      - "8000:8000"
+    depends_on:
+      setup:
+        condition: service_completed_successfully

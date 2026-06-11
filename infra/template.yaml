@@ -1,0 +1,59 @@
+AWSTemplateFormatVersion: '2010-09-09'
+Transform: AWS::Serverless-2016-10-31
+Description: Cloud log aggregation pipeline resources
+
+Resources:
+  LogDLQ:
+    Type: AWS::SQS::Queue
+    Properties:
+      QueueName: log-dlq
+
+  LogIngestionQueue:
+    Type: AWS::SQS::Queue
+    Properties:
+      QueueName: log-ingestion-queue
+      RedrivePolicy:
+        deadLetterTargetArn: !GetAtt LogDLQ.Arn
+        maxReceiveCount: 1
+
+  LogArchiveBucket:
+    Type: AWS::S3::Bucket
+    Properties:
+      BucketName: log-archive
+
+  LogIndexTable:
+    Type: AWS::DynamoDB::Table
+    Properties:
+      TableName: log-index
+      BillingMode: PAY_PER_REQUEST
+      AttributeDefinitions:
+        - AttributeName: service
+          AttributeType: S
+        - AttributeName: timestamp
+          AttributeType: S
+      KeySchema:
+        - AttributeName: service
+          KeyType: HASH
+        - AttributeName: timestamp
+          KeyType: RANGE
+
+  ProcessorFunction:
+    Type: AWS::Serverless::Function
+    Properties:
+      CodeUri: ../
+      Handler: processor.handler.lambda_handler
+      Runtime: python3.12
+      Timeout: 30
+      Environment:
+        Variables:
+          AWS_REGION: us-east-1
+          S3_BUCKET: !Ref LogArchiveBucket
+          DYNAMODB_TABLE: !Ref LogIndexTable
+          DLQ_URL: !Ref LogDLQ
+          SQS_QUEUE_URL: !Ref LogIngestionQueue
+      Events:
+        QueueEvent:
+          Type: SQS
+          Properties:
+            Queue: !GetAtt LogIngestionQueue.Arn
+            BatchSize: 10
