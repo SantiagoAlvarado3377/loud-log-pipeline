@@ -28,10 +28,18 @@ def ensure_table(table_name: str) -> None:
         AttributeDefinitions=[
             {"AttributeName": "service", "AttributeType": "S"},
             {"AttributeName": "timestamp", "AttributeType": "S"},
+            {"AttributeName": "event_id", "AttributeType": "S"},
         ],
         KeySchema=[
             {"AttributeName": "service", "KeyType": "HASH"},
             {"AttributeName": "timestamp", "KeyType": "RANGE"},
+        ],
+        GlobalSecondaryIndexes=[
+            {
+                "IndexName": "event-id-index",
+                "KeySchema": [{"AttributeName": "event_id", "KeyType": "HASH"}],
+                "Projection": {"ProjectionType": "ALL"},
+            }
         ],
         BillingMode="PAY_PER_REQUEST",
     )

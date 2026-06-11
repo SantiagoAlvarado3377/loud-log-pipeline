@@ -6,6 +6,7 @@ from datetime import datetime
 from typing import Any
 
 from boto3.dynamodb.conditions import Attr, Key
+from botocore.exceptions import BotoCoreError, ClientError
 
 from cloud_log_pipeline.aws import get_boto3_client, get_dynamodb_resource
 from cloud_log_pipeline.config import get_settings
@@ -73,7 +74,16 @@ class LogStorage:
         return sorted(response.get("Items", []), key=lambda item: item["timestamp"])
 
     def get_log_by_event_id(self, event_id: str) -> dict[str, Any] | None:
-        response = self.table.scan(FilterExpression=Attr("event_id").eq(event_id))
+        try:
+            response = self.table.query(
+                IndexName="event-id-index",
+                KeyConditionExpression=Key("event_id").eq(event_id),
+            )
+        except ClientError as exc:
+            error_code = exc.response.get("Error", {}).get("Code")
+            if error_code != "ValidationException":
+                raise
+            response = self.table.scan(FilterExpression=Attr("event_id").eq(event_id))
         items = response.get("Items", [])
         if not items:
             return None
@@ -92,10 +102,10 @@ class LogStorage:
         checks = {"dynamodb": "ok", "s3": "ok"}
         try:
             self.table.load()
-        except Exception:
+        except (BotoCoreError, ClientError):
             checks["dynamodb"] = "error"
         try:
             self.s3_client.head_bucket(Bucket=self.settings.s3_bucket)
-        except Exception:
+        except (BotoCoreError, ClientError):
             checks["s3"] = "error"
         return checks
